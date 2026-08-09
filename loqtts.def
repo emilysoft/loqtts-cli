@@ -1,0 +1,31 @@
+; ============================================================
+;  Import definition file for the Loquendo TTS 7 C API.
+;
+;  LoqTTS7.dll exports its C functions with plain names, but
+;  both MSVC and MinGW reference 32-bit __stdcall functions
+;  using the decorated "name@N" form, where N is the size in
+;  bytes of the argument list.  This file lists the decorated
+;  names of every function used by loqtts.c.  When the import
+;  library is generated with "dlltool --kill-at", dlltool
+;  provides the decorated linker symbols (_name@N /
+;  __imp__name@N) while writing the undecorated export name
+;  (name) into the PE import table, which is what LoqTTS7.dll
+;  actually exports.
+; ============================================================
+LIBRARY LoqTTS7.dll
+EXPORTS
+    ttsDeleteSession@4
+    ttsEnumClose@4
+    ttsEnumFirst@20
+    ttsEnumNext@8
+    ttsGetErrorMessage@4
+    ttsGetVersionInfo@4
+    ttsLoadPersona@16
+    ttsNewReader@8
+    ttsNewSession@8
+    ttsQueryAttribute@24
+    ttsRead@20
+    ttsSetAbsolutePitch@8
+    ttsSetAbsoluteSpeed@8
+    ttsSetAudio@28
+    ttsSetVolume@8

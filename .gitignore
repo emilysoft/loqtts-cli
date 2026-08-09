@@ -1,0 +1,8 @@
+# Build artifacts
+loqtts.exe
+libloqtts.a
+*.o
+*.obj
+*.pdb
+*.wav
+*.pcm
