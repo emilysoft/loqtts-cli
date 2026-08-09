@@ -17,7 +17,7 @@ const (
 	voiceFrameSize  = 960
 	// voiceFrameDur is the real-time duration of one Opus frame.
 	voiceFrameDur = 20 * time.Millisecond
-	idleTimeout   = 4 * time.Second
+	idleTimeout   = 5 * time.Minute
 )
 
 // SpeakJob is one requested utterance for a guild.
