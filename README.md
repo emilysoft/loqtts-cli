@@ -173,12 +173,18 @@ Create a bot in the Discord Developer Portal (token with the **Message
 Content** privileged intent enabled), deploy the CLI into the SDK `bin/`, then:
 
 ```
-cd bot
-set -a; source .env; set +a     # DISCORD_TOKEN, optional TTS_* defaults
-nix develop .#default --impure  # go, libopus, steam-run, helpers available
-loqtts-deploy                    # copy loqtts.exe + LoqTTS7AudioUser.dll to LOQTTS_INSTALL/bin
-go run ./cmd/loqttsbot           # or: nix run .#bot
+nix develop . --impure   # go, libopus, steam-run, helpers available
+loqtts-deploy             # copy loqtts.exe + LoqTTS7AudioUser.dll to LOQTTS_INSTALL/bin
+loqtts-bot                # build and run the bot
 ```
+
+The bot loads its configuration from `bot/.env` automatically (or from a
+`.env` in the current directory), so there is **no need to `source` it** —
+`source .env` would not even work, because it does not export the variables
+to the Go process. Start from `cp bot/.env.example bot/.env` and put your
+token in `DISCORD_TOKEN`. Environment variables already set take precedence
+over `.env`. You can also run it from the flake package with
+`NIXPKGS_ALLOW_UNFREE=1 nix run .#bot --impure`.
 
 Environment variables:
 
@@ -193,8 +199,9 @@ Environment variables:
 | `WINEPREFIX` | `~/Games/loquendo` | Wine prefix |
 | `WINE64` | Lutris wine-ge runner | wine64 binary |
 
-You can also `go run ./cmd/pipetest "texto"` to verify the synthesis→Opus
-pipeline without Discord.
+You can also run `cd bot && go run ./cmd/pipetest "texto"` to verify the
+synthesis→Opus pipeline without Discord (it reads the same `bot/.env` for
+the `TTS_*` defaults).
 
 ## Notes
 

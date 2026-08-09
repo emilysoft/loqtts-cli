@@ -13,7 +13,11 @@
     };
   };
 
-  outputs = { self, nixpkgs, loquendo-sdk }: let
+  outputs = {
+    self,
+    nixpkgs,
+    loquendo-sdk,
+  }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
     mingw = pkgs.pkgsCross.mingw32;
@@ -48,7 +52,7 @@
         meta = {
           description = "Command line interface for the Loquendo TTS 7 SDK";
           license = pkgs.lib.licenses.unfree;
-          platforms = [ "x86_64-linux" ];
+          platforms = ["x86_64-linux"];
         };
       };
 
@@ -57,7 +61,7 @@
         pname = "loqttsbot";
         version = "0.1.0";
         src = ./bot;
-        subPackages = [ "./cmd/loqttsbot" ];
+        subPackages = ["./cmd/loqttsbot"];
 
         nativeBuildInputs = [
           pkgs.pkg-config
@@ -87,63 +91,68 @@
     # Development shell: cross toolchain + helpers to build, deploy and run.
     devShells.${system} = {
       default = pkgs.mkShell {
-      name = "loqtts-dev";
+        name = "loqtts-dev";
 
-      packages = [
-        mingw.stdenv.cc
-        pkgs.gnumake
-        pkgs.steam-run # lets the .exe run under Wine on NixOS
-        pkgs.go
-        pkgs.pkg-config
-        pkgs.libopus
-        pkgs.opusfile
-        pkgs.libogg
-        (pkgs.writeShellScriptBin "loqtts-build" ''
-          exec make ROOT="''${LTTS7_ROOT:?set LTTS7_ROOT to your Loquendo SDK path}" "$@"
-        '')
-        (pkgs.writeShellScriptBin "loqtts-deploy" ''
-          set -e
-          install=''${LOQTTS_INSTALL:?set LOQTTS_INSTALL to your Loquendo install path}
-          for f in ./loqtts.exe ./LoqTTS7AudioUser.dll; do
-            [ -f "$f" ] || { echo "missing $f (run loqtts-build first)"; exit 1; }
-            cp "$f" "$install/bin/"
-          done
-          echo "deployed loqtts.exe + LoqTTS7AudioUser.dll to $install/bin"
-        '')
-        (pkgs.writeShellScriptBin "loqtts-run" ''
-          set -e
-          install=''${LOQTTS_INSTALL:?set LOQTTS_INSTALL to your Loquendo install path}
-          [ -f ./loqtts.exe ] && cp ./loqtts.exe "$install/bin/loqtts.exe"
-          [ -f ./LoqTTS7AudioUser.dll ] && cp ./LoqTTS7AudioUser.dll "$install/bin/LoqTTS7AudioUser.dll"
-          cd "$install/bin"
-          wine64=''${WINE64:-$HOME/.local/share/lutris/runners/wine/wine-ge-8-26-x86_64/bin/wine64}
-          exec steam-run env WINEPREFIX=''${WINEPREFIX:-$HOME/Games/loquendo} "$wine64" ./loqtts.exe "$@"
-        '')
-        (pkgs.writeShellScriptBin "loqtts-bot" ''
-          set -e
-          [ -d bot ] && cd bot
-          bin="$(mktemp -d)/loqttsbot"
-          go build -o "$bin" ./cmd/loqttsbot
-          exec "$bin" "$@"
-        '')
-      ];
+        packages = [
+          mingw.stdenv.cc
+          pkgs.gnumake
+          pkgs.steam-run # lets the .exe run under Wine on NixOS
+          pkgs.go
+          pkgs.pkg-config
+          pkgs.libopus
+          pkgs.opusfile
+          pkgs.libogg
+          (pkgs.writeShellScriptBin "loqtts-build" ''
+            exec make ROOT="''${LTTS7_ROOT:?set LTTS7_ROOT to your Loquendo SDK path}" "$@"
+          '')
+          (pkgs.writeShellScriptBin "loqtts-deploy" ''
+            set -e
+            install=''${LOQTTS_INSTALL:?set LOQTTS_INSTALL to your Loquendo install path}
+            root=''${PWD}
+            while [ "$root" != "/" ] && [ ! -f "$root/loqtts.exe" ]; do root="$(dirname "$root")"; done
+            [ -f "$root/loqtts.exe" ] || { echo "loqtts.exe not found (run loqtts-build first)"; exit 1; }
+            for f in loqtts.exe LoqTTS7AudioUser.dll; do
+              [ -f "$root/$f" ] || { echo "missing $root/$f (run loqtts-build first)"; exit 1; }
+              cp "$root/$f" "$install/bin/"
+            done
+            echo "deployed loqtts.exe + LoqTTS7AudioUser.dll to $install/bin"
+          '')
+          (pkgs.writeShellScriptBin "loqtts-run" ''
+            set -e
+            install=''${LOQTTS_INSTALL:?set LOQTTS_INSTALL to your Loquendo install path}
+            root=''${PWD}
+            while [ "$root" != "/" ] && [ ! -f "$root/loqtts.exe" ]; do root="$(dirname "$root")"; done
+            [ -f "$root/loqtts.exe" ] && cp "$root/loqtts.exe" "$install/bin/loqtts.exe"
+            [ -f "$root/LoqTTS7AudioUser.dll" ] && cp "$root/LoqTTS7AudioUser.dll" "$install/bin/LoqTTS7AudioUser.dll"
+            cd "$install/bin"
+            wine64=''${WINE64:-$HOME/.local/share/lutris/runners/wine/wine-ge-8-26-x86_64/bin/wine64}
+            exec steam-run env WINEPREFIX=''${WINEPREFIX:-$HOME/Games/loquendo} "$wine64" ./loqtts.exe "$@"
+          '')
+          (pkgs.writeShellScriptBin "loqtts-bot" ''
+            set -e
+            [ -d bot ] && cd bot
+            bin="$(mktemp -d)/loqttsbot"
+            go build -o "$bin" ./cmd/loqttsbot
+            exec "$bin" "$@"
+          '')
+        ];
 
-      env = {
-        LTTS7_ROOT = toString loquendo-sdk; # build: include/lib from the flake input
-        LOQTTS_INSTALL = "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7"; # run: DLLs resolve by registered absolute paths
-        WINEPREFIX = "/home/nit/Games/loquendo";
-        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libopus pkgs.opusfile pkgs.libogg ];
+        env = {
+          LTTS7_ROOT = toString loquendo-sdk; # build: include/lib from the flake input
+          LOQTTS_INSTALL = "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7"; # run: DLLs resolve by registered absolute paths
+          WINEPREFIX = "/home/nit/Games/loquendo";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.libopus pkgs.opusfile pkgs.libogg];
+        };
+
+        shellHook = ''
+          echo "loqtts dev shell:"
+          echo "  loqtts-build [targets]      build loqtts.exe + LoqTTS7AudioUser.dll"
+          echo "  loqtts-deploy               copy exe + dll to LOQTTS_INSTALL/bin"
+          echo "  loqtts-run [args]           run ./loqtts.exe under Wine (steam-run)"
+          echo "  loqtts-bot [args]           build and run the Discord bot"
+          echo "  LTTS7_ROOT=$LTTS7_ROOT"
+        '';
       };
-
-      shellHook = ''
-        echo "loqtts dev shell:"
-        echo "  loqtts-build [targets]      build loqtts.exe + LoqTTS7AudioUser.dll"
-        echo "  loqtts-deploy               copy exe + dll to LOQTTS_INSTALL/bin"
-        echo "  loqtts-run [args]           run ./loqtts.exe under Wine (steam-run)"
-        echo "  loqtts-bot [args]           build and run the Discord bot"
-        echo "  LTTS7_ROOT=$LTTS7_ROOT"
-      '';
-    };
     };
   };
 }

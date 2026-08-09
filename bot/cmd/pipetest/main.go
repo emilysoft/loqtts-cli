@@ -16,6 +16,7 @@ import (
 // Usage:
 //   go run ./cmd/pipetest "hola mundo" [-v Voz] [-r 180]
 func main() {
+	loqttsbot.LoadDotEnv()
 	cfg := loqttsbot.LoadSynthConfig()
 
 	synth, err := loqttsbot.NewSynthesizer(cfg)
