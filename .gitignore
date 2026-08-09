@@ -1,8 +1,15 @@
 # Build artifacts
 loqtts.exe
+LoqTTS7AudioUser.dll
 libloqtts.a
 *.o
 *.obj
 *.pdb
 *.wav
 *.pcm
+result
+# Go
+bot/loqttsbot
+bot/*.test
+# Secrets
+.env

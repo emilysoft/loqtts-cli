@@ -72,6 +72,37 @@ nix-shell -p 'pkgsCross.mingw32.stdenv.cc' --run 'make'
 The resulting `loqtts.exe` runs in a Wine prefix that has the Loquendo TTS 7
 installation (run it from the `bin` directory so the DLLs are found).
 
+### On NixOS with the flake
+
+The repository ships a `flake.nix` that cross-compiles `loqtts.exe` and
+provides a development shell with helpers to build and run it under Wine.
+
+The flake takes the (proprietary, non-redistributable) LTTS7 SDK as a `path`
+input. Point it at your install with `--override-input`, e.g.:
+
+```
+nix build . --override-input loquendo-sdk path:/path/to/LTTS7
+nix build . --impure   # with the default path baked in the flake
+```
+
+The resulting `loqtts.exe` ends up in `result/bin/`. Then, in a dev shell:
+
+```
+nix develop . --impure
+loqtts-build            # make ROOT=<flake input SDK>
+loqtts-run --list-voices
+loqtts-run -v Carmen -o hello.wav "Hola"
+```
+
+`loqtts-run` copies the freshly built exe into the install's `bin/` (the
+Loquendo DLLs resolve by the absolute paths registered in the Wine prefix)
+and runs it with `steam-run` + the Wine runner. The relevant environment
+variables (`LTTS7_ROOT`, `LOQTTS_INSTALL`, `WINEPREFIX`, `WINE64`) can be
+overridden to match your setup.
+
+Since the SDK is unfree, `--impure` and `NIXPKGS_ALLOW_UNFREE=1` are needed
+when building from the flake.
+
 ## Usage
 
 ```
@@ -86,7 +117,7 @@ loqtts [options] [text]
 | `-r, --rate <wpm>` | Absolute speech rate in words per minute |
 | `-p, --pitch <hz>` | Absolute pitch in hertz |
 | `-a, --volume <0-100>` | Volume (default 50) |
-| `-o, --output <file>` | Write to a file instead of the audio board. `.wav` = WAV file, any other extension = raw PCM |
+| `-o, --output <file>` | Write to a file instead of the audio board. `.wav` = WAV file, any other extension = raw PCM. `-` = WAV to stdout |
 | `-f, --file <path>` | Read the text to speak from a file |
 | `--rate-hz <n>` | Audio sample rate for file output (default 32000) |
 | `--mono` | Mono output instead of stereo |
@@ -97,6 +128,21 @@ loqtts [options] [text]
 
 When `[text]` is omitted the program reads the input from `stdin`.
 
+## `-o -` (audio in memory)
+
+`loqtts -o - "text"` writes the synthesized **WAV to stdout** without touching
+the disk. This is implemented by the custom audio destination
+`LoqTTS7AudioUser.dll` (built from `audiouser.c`): it buffers the PCM that
+the engine produces and emits a complete RIFF WAV on stdout at the end of
+the stream. The DLL must sit next to `loqtts.exe` (in the SDK `bin/`
+directory) so the engine can load it.
+
+```
+loqtts -o - "hola" --mono --rate-hz 48000 > audio.wav
+```
+
+The Discord bot uses this to synthesize straight into a memory buffer.
+
 ## Examples
 
 ```
@@ -106,6 +152,49 @@ loqtts -v Carlos -o report.wav -f report.txt
 loqtts -v Soledad -o out.pcm --rate-hz 8000 --mono "raw pcm output"
 type speech.txt | loqtts -v Jorge
 ```
+
+## Discord bot (`bot/`)
+
+A Go bot that plays Discord messages in the author's voice channel using
+Loquendo voices. It works fully in memory: `loqtts -o -` produces the WAV in
+a buffer, which is decoded and encoded to Opus in-process (no ffmpeg, no temp
+files).
+
+### Commands
+
+* `!tts [opciones] texto` — speak the text. Options: `-v <voz>`, `-l <idioma>`,
+  `-s <estilo>`, `-r <palabras/min>`, `-p <hz>`, `-a <0-100>`.
+* `!tts stop` — stop the current playback and clear the queue.
+* `!loqtts --list-voices | --list-languages | --version` — engine info.
+
+### Running
+
+Create a bot in the Discord Developer Portal (token with the **Message
+Content** privileged intent enabled), deploy the CLI into the SDK `bin/`, then:
+
+```
+cd bot
+set -a; source .env; set +a     # DISCORD_TOKEN, optional TTS_* defaults
+nix develop .#default --impure  # go, libopus, steam-run, helpers available
+loqtts-deploy                    # copy loqtts.exe + LoqTTS7AudioUser.dll to LOQTTS_INSTALL/bin
+go run ./cmd/loqttsbot           # or: nix run .#bot
+```
+
+Environment variables:
+
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `DISCORD_TOKEN` | — (required) | Bot token |
+| `BOT_PREFIX` | `!tts` | Command prefix |
+| `TTS_VOICE` | `Carlos` | Default voice |
+| `TTS_LANGUAGE` | *empty* | Default language |
+| `TTS_RATE` / `TTS_PITCH` / `TTS_VOLUME` | *empty* | Defaults (voice defaults if unset) |
+| `LOQTTS_INSTALL` | the LTTS7 path | Install root containing `bin/loqtts.exe` |
+| `WINEPREFIX` | `~/Games/loquendo` | Wine prefix |
+| `WINE64` | Lutris wine-ge runner | wine64 binary |
+
+You can also `go run ./cmd/pipetest "texto"` to verify the synthesis→Opus
+pipeline without Discord.
 
 ## Notes
 

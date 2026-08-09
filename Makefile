@@ -24,7 +24,7 @@ ROOT    ?= ..
 CFLAGS  = -O2 -Wall -I"$(ROOT)/include"
 LDFLAGS = -static-libgcc
 
-all: loqtts.exe
+all: loqtts.exe LoqTTS7AudioUser.dll
 
 libloqtts.a: loqtts.def
 	$(DLLTOOL) --kill-at --dllname LoqTTS7.dll --input-def loqtts.def --output-lib $@
@@ -32,5 +32,11 @@ libloqtts.a: loqtts.def
 loqtts.exe: loqtts.c libloqtts.a
 	$(CC) $(CFLAGS) loqtts.c libloqtts.a $(LDFLAGS) -o $@
 
+# Custom in-memory audio destination ("-o -"): a DLL loaded by the
+# engine at runtime, not linked into loqtts.exe.  The .def makes the
+# exported entry point keep its undecorated name.
+LoqTTS7AudioUser.dll: audiouser.c audiouser.def
+	$(CC) $(CFLAGS) -shared audiouser.c audiouser.def -o $@
+
 clean:
-	rm -f loqtts.exe libloqtts.a
+	rm -f loqtts.exe libloqtts.a LoqTTS7AudioUser.dll

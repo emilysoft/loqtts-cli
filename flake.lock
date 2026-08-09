@@ -1,0 +1,41 @@
+{
+  "nodes": {
+    "loquendo-sdk": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786270540,
+        "narHash": "sha256-ZBdHZ957cinW743VZkt8r2jNw+ElYPzGOlHCsYeojx4=",
+        "path": "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7",
+        "type": "path"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1786106723,
+        "narHash": "sha256-zDSUbpoeo/9ZmD2+wXnzxoo1+uhL8vxc0b8yuYMKYq0=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f13ff45afd1bb73e640eaa08a7066dbed07e3238",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "loquendo-sdk": "loquendo-sdk",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

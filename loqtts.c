@@ -29,6 +29,7 @@ static void usage(FILE *out)
         "  -a, --volume <0-100>   volume (default: 50)\n"
         "  -o, --output <file>    write speech to a file instead of the audio board.\n"
         "                         .wav extension -> WAV file, otherwise raw PCM.\n"
+        "                         '-' -> write the WAV to standard output.\n"
         "  -f, --file <path>      read the text to speak from a file\n"
         "      --rate-hz <n>      audio sample rate for file output (default: 32000)\n"
         "      --mono             mono output instead of stereo\n"
@@ -373,7 +374,14 @@ int main(int argc, char **argv)
             print_error("cannot set volume", r);
     }
 
-    if (outfile)
+    if (outfile && strcmp(outfile, "-") == 0)
+    {
+        /* Stream the synthesized WAV to stdout via the custom in-memory
+         * audio destination (LoqTTS7AudioUser.dll). */
+        r = ttsSetAudio(hReader, "LoqTTS7AudioUser", NULL, sample_rate,
+                        tts_LINEAR, mono ? tts_MONO : tts_STEREO, 0);
+    }
+    else if (outfile)
         r = ttsSetAudio(hReader, "LTTS7AudioFile", outfile, sample_rate,
                         tts_LINEAR, mono ? tts_MONO : tts_STEREO, 0);
     else

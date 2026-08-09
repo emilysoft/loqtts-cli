@@ -1,0 +1,11 @@
+; ============================================================
+;  Import definition file for the custom audio destination
+;  LoqTTS7AudioUser.dll.
+;
+;  The single exported function must have the same name as the
+;  DLL (without extension); the engine loads the module through
+;  that entry point (see AudioStub.c sample in the SDK).
+; ============================================================
+LIBRARY "LoqTTS7AudioUser"
+EXPORTS
+    LoqTTS7AudioUser
