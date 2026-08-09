@@ -84,5 +84,5 @@ func main() {
 		os.Exit(1)
 	}
 	ms := len(frames) * 20
-	fmt.Printf("opus: %d frames of 20 ms (%.2f s), ready for discordgo OpusSend\n", len(frames), float64(ms)/1000)
+	fmt.Printf("opus: %d frames of 20 ms (%.2f s), ready to send to a voice channel\n", len(frames), float64(ms)/1000)
 }

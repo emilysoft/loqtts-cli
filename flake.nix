@@ -72,18 +72,18 @@
           pkgs.opusfile
           pkgs.libogg
         ];
-        vendorHash = "sha256-NEPgNoRD8DogpAx7l6YWuC24Dcb73oHxiO2lbCTZpcI=";
+        vendorHash = "sha256-Ec0mYdVHdFCG2S4a7H27gLLp8/dfTUafA3TvvGxMh8M=";
 
         postInstall = ''
           wrapProgram $out/bin/loqttsbot \
-            --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libopus pkgs.opusfile pkgs.libogg ]} \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.steam-run ]}
+            --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [pkgs.libopus pkgs.opusfile pkgs.libogg]} \
+            --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.steam-run]}
         '';
 
         meta = {
           description = "Discord bot that speaks with Loquendo TTS 7";
           license = pkgs.lib.licenses.unfree;
-          platforms = [ "x86_64-linux" ];
+          platforms = ["x86_64-linux"];
         };
       };
     };

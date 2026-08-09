@@ -1,10 +1,12 @@
 package loqttsbot
 
 import (
+	"context"
 	"sync"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/snowflake/v2"
 	"github.com/hraban/opus"
 )
 
@@ -13,35 +15,37 @@ const (
 	// (960 samples per frame).
 	voiceSampleRate = 48000
 	voiceFrameSize  = 960
-	idleTimeout     = 4 * time.Second
+	// voiceFrameDur is the real-time duration of one Opus frame.
+	voiceFrameDur = 20 * time.Millisecond
+	idleTimeout   = 4 * time.Second
 )
 
 // SpeakJob is one requested utterance for a guild.
 type SpeakJob struct {
-	GuildID   string
-	ChannelID string // voice channel to play in
-	Wav       []byte // synthesized WAV in memory
+	GuildID   snowflake.ID
+	ChannelID snowflake.ID // voice channel to play in
+	Wav       []byte       // synthesized WAV in memory
 }
 
 // Player manages one playback queue and voice connection per guild.
 type Player struct {
-	mu      sync.Mutex
-	session *discordgo.Session
-	guilds  map[string]*guildPlayer
+	mu     sync.Mutex
+	voice  voice.Manager
+	guilds map[snowflake.ID]*guildPlayer
 }
 
 // guildPlayer owns the voice connection and queue of a single guild.
 type guildPlayer struct {
-	session *discordgo.Session
-	jobs    chan SpeakJob
-	stop    chan struct{}
-	vc      *discordgo.VoiceConnection
-	enc     *opus.Encoder
+	voice voice.Manager
+	jobs  chan SpeakJob
+	stop  chan struct{}
+	conn  voice.Conn
+	enc   *opus.Encoder
 }
 
-// NewPlayer creates a Player for the given Discord session.
-func NewPlayer(s *discordgo.Session) *Player {
-	return &Player{session: s, guilds: make(map[string]*guildPlayer)}
+// NewPlayer creates a Player using the given voice manager.
+func NewPlayer(vm voice.Manager) *Player {
+	return &Player{voice: vm, guilds: make(map[snowflake.ID]*guildPlayer)}
 }
 
 // Enqueue adds an utterance to a guild's playback queue.
@@ -50,9 +54,9 @@ func (p *Player) Enqueue(job SpeakJob) {
 	gp, ok := p.guilds[job.GuildID]
 	if !ok {
 		gp = &guildPlayer{
-			session: p.session,
-			jobs:    make(chan SpeakJob, 32),
-			stop:    make(chan struct{}, 1),
+			voice: p.voice,
+			jobs:  make(chan SpeakJob, 32),
+			stop:  make(chan struct{}, 1),
 		}
 		p.guilds[job.GuildID] = gp
 		go gp.run()
@@ -62,7 +66,7 @@ func (p *Player) Enqueue(job SpeakJob) {
 }
 
 // Stop interrupts the current playback of a guild and clears its queue.
-func (p *Player) Stop(guildID string) {
+func (p *Player) Stop(guildID snowflake.ID) {
 	p.mu.Lock()
 	gp, ok := p.guilds[guildID]
 	p.mu.Unlock()
@@ -103,18 +107,28 @@ func (gp *guildPlayer) run() {
 
 // play connects to the target channel if needed and streams the utterance.
 func (gp *guildPlayer) play(job SpeakJob) {
-	if gp.vc == nil || gp.vc.ChannelID != job.ChannelID {
-		if gp.vc != nil {
-			gp.vc.Disconnect()
-			gp.vc = nil
+	if gp.conn == nil || gp.conn.ChannelID() == nil || *gp.conn.ChannelID() != job.ChannelID {
+		if gp.conn != nil {
+			gp.conn.Close(context.Background())
+			gp.conn = nil
 		}
-		vc, err := gp.session.ChannelVoiceJoin(job.GuildID, job.ChannelID, false, false)
-		if err != nil {
+		conn := gp.voice.CreateConn(job.GuildID)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := conn.Open(ctx, job.ChannelID, false, false); err != nil {
 			return
 		}
-		gp.vc = vc
+		// Drain incoming UDP packets so the socket buffer never fills up.
+		go func() {
+			for {
+				if _, err := conn.UDP().ReadPacket(); err != nil {
+					return
+				}
+			}
+		}()
+		gp.conn = conn
 	}
-	vc := gp.vc
+	conn := gp.conn
 
 	w, err := ParseWAV(job.Wav)
 	if err != nil {
@@ -125,13 +139,17 @@ func (gp *guildPlayer) play(job SpeakJob) {
 		return
 	}
 
-	vc.Speaking(true)
+	ctx := context.Background()
+	conn.SetSpeaking(ctx, voice.SpeakingFlagMicrophone)
+
 	frames := len(w.Pcm) / voiceFrameSize
 	opusBuf := make([]byte, 4096)
+	ticker := time.NewTicker(voiceFrameDur)
+	defer ticker.Stop()
 	for i := 0; i < frames; i++ {
 		select {
 		case <-gp.stop:
-			vc.Speaking(false)
+			conn.SetSpeaking(ctx, voice.SpeakingFlagNone)
 			return
 		default:
 		}
@@ -141,14 +159,17 @@ func (gp *guildPlayer) play(job SpeakJob) {
 		}
 		frame := make([]byte, n)
 		copy(frame, opusBuf[:n])
+		if _, err := conn.UDP().Write(frame); err != nil {
+			break
+		}
 		select {
-		case vc.OpusSend <- frame:
+		case <-ticker.C:
 		case <-gp.stop:
-			vc.Speaking(false)
+			conn.SetSpeaking(ctx, voice.SpeakingFlagNone)
 			return
 		}
 	}
-	vc.Speaking(false)
+	conn.SetSpeaking(ctx, voice.SpeakingFlagNone)
 }
 
 // drain discards the queued utterances (used by !tts stop).
@@ -164,8 +185,8 @@ func (gp *guildPlayer) drain() {
 
 // leave disconnects from the voice channel if connected.
 func (gp *guildPlayer) leave() {
-	if gp.vc != nil {
-		gp.vc.Disconnect()
-		gp.vc = nil
+	if gp.conn != nil {
+		gp.conn.Close(context.Background())
+		gp.conn = nil
 	}
 }

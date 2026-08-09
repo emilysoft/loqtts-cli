@@ -160,6 +160,13 @@ Loquendo voices. It works fully in memory: `loqtts -o -` produces the WAV in
 a buffer, which is decoded and encoded to Opus in-process (no ffmpeg, no temp
 files).
 
+Since March 2026 Discord requires the **DAVE** end-to-end encryption protocol
+for voice. The bot therefore uses
+[`disgo`](https://github.com/disgoorg/disgo) with the pure-Go
+[`dave-go`](https://github.com/thomas-vilte/dave-go) DAVE implementation
+(Go 1.26+), instead of the older `discordgo` (which has no DAVE support and
+gets disconnected with close code 4017).
+
 ### Commands
 
 * `!tts [opciones] texto` — speak the text. Options: `-v <voz>`, `-l <idioma>`,

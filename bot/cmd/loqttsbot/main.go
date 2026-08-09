@@ -9,7 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo"
+	disbot "github.com/disgoorg/disgo/bot"
+	"github.com/disgoorg/disgo/cache"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/disgo/gateway"
+	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/snowflake/v2"
+	"github.com/thomas-vilte/dave-go/session"
 
 	"loqttsbot"
 )
@@ -21,6 +29,7 @@ const ttsUsage = "Uso: `!tts [opciones] texto`\n" +
 
 type bot struct {
 	cfg    loqttsbot.Config
+	client *disbot.Client
 	synth  *loqttsbot.Synthesizer
 	player *loqttsbot.Player
 }
@@ -32,14 +41,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	dg, err := discordgo.New("Bot " + cfg.Token)
+	client, err := disgo.New(cfg.Token,
+		disbot.WithCacheConfigOpts(
+			cache.WithCaches(cache.FlagGuilds | cache.FlagVoiceStates),
+		),
+		disbot.WithGatewayConfigOpts(gateway.WithIntents(
+			gateway.IntentGuilds |
+				gateway.IntentGuildVoiceStates |
+				gateway.IntentGuildMessages |
+				gateway.IntentMessageContent,
+		)),
+		disbot.WithVoiceManagerConfigOpts(
+			voice.WithDaveSessionCreateFunc(session.CreateFunc()),
+		),
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-	dg.Identify.Intents = discordgo.IntentsGuildMessages |
-		discordgo.IntentsGuildVoiceStates |
-		discordgo.IntentsMessageContent
 
 	synth, err := loqttsbot.NewSynthesizer(cfg)
 	if err != nil {
@@ -47,10 +66,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	b := &bot{cfg: cfg, synth: synth, player: loqttsbot.NewPlayer(dg)}
-	dg.AddHandler(b.onMessageCreate)
+	b := &bot{
+		cfg:    cfg,
+		client: client,
+		synth:  synth,
+		player: loqttsbot.NewPlayer(client.VoiceManager),
+	}
 
-	if err := dg.Open(); err != nil {
+	client.EventManager.AddEventListeners(disbot.NewListenerFunc(b.onMessageCreate))
+
+	if err := client.OpenGateway(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -60,42 +85,50 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	dg.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client.Close(ctx)
 }
 
-func (b *bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author == nil || m.Author.Bot || m.GuildID == "" {
+func (b *bot) onMessageCreate(e *events.MessageCreate) {
+	m := e.Message
+	if m.Author.Bot || m.GuildID == nil {
 		return
 	}
 	content := m.Content
 	switch {
 	case strings.HasPrefix(content, "!tts"):
-		b.handleTTS(s, m, strings.TrimSpace(strings.TrimPrefix(content, "!tts")))
+		b.handleTTS(e, strings.TrimSpace(strings.TrimPrefix(content, "!tts")))
 	case strings.HasPrefix(content, "!loqtts"):
-		b.handleLoqtts(s, m, strings.TrimSpace(strings.TrimPrefix(content, "!loqtts")))
+		b.handleLoqtts(e, strings.TrimSpace(strings.TrimPrefix(content, "!loqtts")))
 	}
 }
 
-func (b *bot) handleTTS(s *discordgo.Session, m *discordgo.MessageCreate, args string) {
+func (b *bot) send(channelID snowflake.ID, msg string) {
+	b.client.Rest.CreateMessage(channelID, discord.MessageCreate{Content: msg})
+}
+
+func (b *bot) handleTTS(e *events.MessageCreate, args string) {
+	m := e.Message
 	if args == "" {
-		s.ChannelMessageSend(m.ChannelID, ttsUsage)
+		b.send(m.ChannelID, ttsUsage)
 		return
 	}
 	if args == "stop" {
-		b.player.Stop(m.GuildID)
-		s.ChannelMessageSend(m.ChannelID, "Reproducción detenida.")
+		b.player.Stop(*m.GuildID)
+		b.send(m.ChannelID, "Reproducción detenida.")
 		return
 	}
 
 	parsed, err := loqttsbot.ParseTTS(strings.Fields(args))
 	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Error: "+err.Error())
+		b.send(m.ChannelID, "Error: "+err.Error())
 		return
 	}
 
-	vs, err := s.State.VoiceState(m.GuildID, m.Author.ID)
-	if err != nil || vs == nil || vs.ChannelID == "" {
-		s.ChannelMessageSend(m.ChannelID, "Únete a un canal de voz primero.")
+	vs, ok := b.client.Caches.VoiceState(*m.GuildID, m.Author.ID)
+	if !ok || vs.ChannelID == nil {
+		b.send(m.ChannelID, "Únete a un canal de voz primero.")
 		return
 	}
 
@@ -125,18 +158,18 @@ func (b *bot) handleTTS(s *discordgo.Session, m *discordgo.MessageCreate, args s
 		defer cancel()
 		wav, err := b.synth.Speak(ctx, parsed.Text, opts)
 		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "Error al sintetizar: "+err.Error())
+			b.send(m.ChannelID, "Error al sintetizar: "+err.Error())
 			return
 		}
 		b.player.Enqueue(loqttsbot.SpeakJob{
-			GuildID:   m.GuildID,
-			ChannelID: vs.ChannelID,
+			GuildID:   *m.GuildID,
+			ChannelID: *vs.ChannelID,
 			Wav:       wav,
 		})
 	}()
 }
 
-func (b *bot) handleLoqtts(s *discordgo.Session, m *discordgo.MessageCreate, args string) {
+func (b *bot) handleLoqtts(e *events.MessageCreate, args string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -150,12 +183,12 @@ func (b *bot) handleLoqtts(s *discordgo.Session, m *discordgo.MessageCreate, arg
 	case "--version":
 		out, err = b.synth.Version(ctx)
 	default:
-		s.ChannelMessageSend(m.ChannelID,
+		b.send(e.Message.ChannelID,
 			"Uso: `!loqtts --list-voices | --list-languages | --version`")
 		return
 	}
 	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Error: "+err.Error())
+		b.send(e.Message.ChannelID, "Error: "+err.Error())
 		return
 	}
 	out = strings.TrimSpace(out)
@@ -165,5 +198,5 @@ func (b *bot) handleLoqtts(s *discordgo.Session, m *discordgo.MessageCreate, arg
 	if len(out) > 1900 {
 		out = out[:1900] + "…"
 	}
-	s.ChannelMessageSend(m.ChannelID, "```"+out+"```")
+	b.send(e.Message.ChannelID, "```"+out+"```")
 }
