@@ -77,7 +77,7 @@
         postInstall = ''
           wrapProgram $out/bin/loqttsbot \
             --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [pkgs.libopus pkgs.opusfile pkgs.libogg]} \
-            --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.steam-run]}
+            --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.steam-run pkgs.ffmpeg]}
         '';
 
         meta = {
@@ -102,6 +102,7 @@
           pkgs.libopus
           pkgs.opusfile
           pkgs.libogg
+          pkgs.ffmpeg # WAV -> MP3 for the !ttsmp3 command
           (pkgs.writeShellScriptBin "loqtts-build" ''
             exec make ROOT="''${LTTS7_ROOT:?set LTTS7_ROOT to your Loquendo SDK path}" "$@"
           '')

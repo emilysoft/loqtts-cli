@@ -169,10 +169,13 @@ gets disconnected with close code 4017).
 
 ### Commands
 
-* `!tts [opciones] texto` — speak the text. Options: `-v <voz>`, `-l <idioma>`,
+* `>tts [opciones] texto` — speak the text. Options: `-v <voz>`, `-l <idioma>`,
   `-s <estilo>`, `-r <palabras/min>`, `-p <hz>`, `-a <0-100>`.
-* `!tts stop` — stop the current playback and clear the queue.
-* `!loqtts --list-voices | --list-languages | --version` — engine info.
+* `>tts stop` — stop the current playback and clear the queue.
+* `>ttsmp3 [opciones] texto` — synthesize the text and send the audio as an
+  `.mp3` file attached to the message (same options as `>tts`; requires
+  `ffmpeg` on the bot's `PATH`).
+* `>loqtts --list-voices | --list-languages | --version` — engine info.
 
 ### Running
 
@@ -198,7 +201,7 @@ Environment variables:
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
 | `DISCORD_TOKEN` | — (required) | Bot token |
-| `BOT_PREFIX` | `!tts` | Command prefix |
+| `BOT_PREFIX` | `>` | Command prefix |
 | `TTS_VOICE` | `Carlos` | Default voice |
 | `TTS_LANGUAGE` | *empty* | Default language |
 | `TTS_RATE` / `TTS_PITCH` / `TTS_VOLUME` | *empty* | Defaults (voice defaults if unset) |

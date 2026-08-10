@@ -13,7 +13,7 @@ import (
 // Config holds the bot configuration, read from environment variables.
 type Config struct {
 	Token  string // Discord bot token (DISCORD_TOKEN)
-	Prefix string // command prefix (default "!tts")
+	Prefix string // command prefix (default ">")
 
 	// Default synthesis options.
 	Voice    string
@@ -112,7 +112,7 @@ func LoadSynthConfig() Config {
 	home, _ := os.UserHomeDir()
 	return Config{
 		Token:   env("DISCORD_TOKEN"),
-		Prefix:  envDefault("BOT_PREFIX", "!tts"),
+		Prefix:  envDefault("BOT_PREFIX", ">"),
 		Voice:   envDefault("TTS_VOICE", "Carlos"),
 		Language: env("TTS_LANGUAGE"),
 		Style:   env("TTS_STYLE"),
