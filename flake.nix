@@ -19,7 +19,10 @@
         version = "1.0.0";
         src = self;
 
-        sdk = ltts7Root;
+        sdk = builtins.path {
+          path = ltts7Root;
+          name = "ltss7-sdk";
+        };
 
         nativeBuildInputs = [
           mingw.stdenv.cc
