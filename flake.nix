@@ -13,7 +13,7 @@
     pkgs = nixpkgs.legacyPackages.${system};
     mingw = pkgs.pkgsCross.mingw32;
 
-    mkLoqTTS = ltts7Root:
+    mkLoqTTS = {pkgs, mingw, ltts7Root}:
       pkgs.stdenv.mkDerivation {
         pname = "loqtts";
         version = "1.0.0";
@@ -47,7 +47,7 @@
       };
   in {
     packages.${system} = {
-      default = mkLoqTTS "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7";
+      default = mkLoqTTS {inherit pkgs mingw; ltts7Root = "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7";};
 
       bot = pkgs.buildGoModule {
         pname = "loqttsbot";
@@ -98,7 +98,11 @@
 
       config = lib.mkIf cfg.enable {
         environment.systemPackages = [
-          (mkLoqTTS (toString cfg.ltts7))
+          (mkLoqTTS {
+            inherit pkgs;
+            mingw = pkgs.pkgsCross.mingw32;
+            ltts7Root = toString cfg.ltts7;
+          })
         ];
       };
     };
