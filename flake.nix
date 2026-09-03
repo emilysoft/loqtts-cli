@@ -121,12 +121,54 @@
           (pkgs.writeShellScriptBin "loqtts" ''
             set -e
             install="${toString cfg.ltts7}"
+            start_dir="$(pwd)"
             cp "${bin}/loqtts.exe" "$install/bin/loqtts.exe"
             cp "${bin}/LoqTTS7AudioUser.dll" "$install/bin/LoqTTS7AudioUser.dll"
-            cd "$install/bin"
-            exec ${pkgs.steam-run}/bin/steam-run \
-              env WINEPREFIX="${toString cfg.winePrefix}" \
-              "${toString cfg.wine64}" ./loqtts.exe "$@"
+
+            args=("$@")
+            out=
+            while [ "$#" -gt 0 ]; do
+              case "$1" in
+                -o|--output) out="$2"; shift 2 ;;
+                --output=*) out="''${1#*=}"; shift ;;
+                *) shift ;;
+              esac
+            done
+
+            run_loqtts() {
+              ${pkgs.steam-run}/bin/steam-run \
+                env WINEPREFIX="${toString cfg.winePrefix}" \
+                "${toString cfg.wine64}" ./loqtts.exe "$@"
+            }
+
+            # loqtts.exe resolves its plugins relative to the install's bin/,
+            # so it must run from there (the engine loads the audio destinations
+            # and DLLs from the current directory).
+            cd "$install/bin" || exit 1
+
+            if [ -z "$out" ]; then
+              exec run_loqtts "''${args[@]}"
+            fi
+
+            if [ "$out" = "-" ]; then
+              # WAV to stdout -> pipe through ffmpeg to MP3 on stdout.
+              run_loqtts "''${args[@]}" 2>"$install/bin/.loqtts.err" |
+                ${pkgs.ffmpeg}/bin/ffmpeg -loglevel error -f wav -i - -f mp3 -b:a 128k -
+              rm -f "$install/bin/.loqtts.err"
+              exit $?
+            fi
+
+            # File output: override to a temp WAV in the install dir (must be a
+            # relative path resolvable by the engine), then transcode to MP3 in
+            # the caller's directory.
+            tmp="$install/bin/.loqtts-$$.wav"
+            rm -f "$tmp"
+            run_loqtts "''${args[@]}" -o ".loqtts-$$.wav" 2>"$install/bin/.loqtts.err"
+            target="''${out%.wav}.mp3"
+            [ "$target" = "$out" ] && target="$out.mp3"
+            ${pkgs.ffmpeg}/bin/ffmpeg -loglevel error -y -i "$tmp" -b:a 128k "$start_dir/$target"
+            rm -f "$tmp" "$install/bin/.loqtts.err"
+            echo "saved $start_dir/$target"
           '')
         ];
       };
