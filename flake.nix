@@ -87,6 +87,12 @@
       ...
     }: let
       cfg = config.programs.loqtts;
+      package = mkLoqTTS {
+        inherit pkgs;
+        mingw = pkgs.pkgsCross.mingw32;
+        ltts7Root = toString cfg.ltts7;
+      };
+      bin = "${package}/bin";
     in {
       options.programs.loqtts = {
         enable = lib.mkEnableOption "Loquendo TTS 7 CLI";
@@ -94,15 +100,31 @@
           type = lib.types.path;
           description = "Path to the Loquendo TTS 7 SDK installation (must contain include/ and lib/).";
         };
+        wine64 = lib.mkOption {
+          type = lib.types.path;
+          description = "Path to a wine64 binary used to run loqtts.exe.";
+          default = "/home/nit/.local/share/lutris/runners/wine/wine-ge-8-26-x86_64/bin/wine64";
+        };
+        winePrefix = lib.mkOption {
+          type = lib.types.path;
+          description = "Wine prefix that has the Loquendo install registered.";
+          default = "/home/nit/Games/loquendo";
+        };
       };
 
       config = lib.mkIf cfg.enable {
         environment.systemPackages = [
-          (mkLoqTTS {
-            inherit pkgs;
-            mingw = pkgs.pkgsCross.mingw32;
-            ltts7Root = toString cfg.ltts7;
-          })
+          package
+          (pkgs.writeShellScriptBin "loqtts" ''
+            set -e
+            install="${toString cfg.ltts7}"
+            cp "${bin}/loqtts.exe" "$install/bin/loqtts.exe"
+            cp "${bin}/LoqTTS7AudioUser.dll" "$install/bin/LoqTTS7AudioUser.dll"
+            cd "$install/bin"
+            exec ${pkgs.steam-run}/bin/steam-run \
+              env WINEPREFIX="${toString cfg.winePrefix}" \
+              "${toString cfg.wine64}" ./loqtts.exe "$@"
+          '')
         ];
       };
     };
