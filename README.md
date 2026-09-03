@@ -75,33 +75,74 @@ installation (run it from the `bin` directory so the DLLs are found).
 ### On NixOS with the flake
 
 The repository ships a `flake.nix` that cross-compiles `loqtts.exe` and
-provides a development shell with helpers to build and run it under Wine.
+provides a development shell with helpers to build and run it under Wine. It
+also exposes a `nixosModules.default` so you can install the CLI as part of
+your system configuration.
 
-The flake takes the (proprietary, non-redistributable) LTTS7 SDK as a `path`
-input. Point it at your install with `--override-input`, e.g.:
+Since the SDK is unfree, set `nixpkgs.config.allowUnfree = true` and build
+with `NIXPKGS_ALLOW_UNFREE=1` when needed.
+
+#### NixOS module (recommended)
+
+Import the flake module and point it at your Loquendo TTS 7 installation.
+The path must contain the `include/` and `lib/` folders used to build the
+CLI.
+
+```nix
+# flake.nix (your dotfiles)
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    loqtts.url = "github:<you>/loqtts-cli";
+  };
+
+  outputs = { self, nixpkgs, loqtts, ... }: {
+    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        loqtts.nixosModules.default
+        ./configuration.nix
+      ];
+    };
+  };
+}
+```
+
+```nix
+# configuration.nix
+{
+  programs.loqtts = {
+    enable = true;
+    ltts7 = "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7";
+  };
+}
+```
+
+Then `sudo nixos-rebuild switch`. This adds `loqtts.exe` and
+`LoqTTS7AudioUser.dll` to `environment.systemPackages`, so they end up on
+your `PATH` (`/run/current-system/sw/bin`). The binaries are Windows
+executables and are meant to be run under Wine (see `loqtts-run` in the dev
+shell below).
+
+#### Dev shell
 
 ```
-nix build . --override-input loquendo-sdk path:/path/to/LTTS7
-nix build . --impure   # with the default path baked in the flake
-```
-
-The resulting `loqtts.exe` ends up in `result/bin/`. Then, in a dev shell:
-
-```
-nix develop . --impure
-loqtts-build            # make ROOT=<flake input SDK>
+nix develop @.
+loqtts-build                       # make ROOT=$LTTS7_ROOT
+LTTS7_ROOT=/path/to/LTTS7 loqtts-build
 loqtts-run --list-voices
 loqtts-run -v Carmen -o hello.wav "Hola"
 ```
 
+`loqtts-build` runs `make ROOT=$LTTS7_ROOT`, so set `LTTS7_ROOT` to your SDK
+path (it is no longer baked into the flake). The resulting `loqtts.exe` ends
+up in the current directory (or in `result/bin/` if built with `nix build`).
+
 `loqtts-run` copies the freshly built exe into the install's `bin/` (the
 Loquendo DLLs resolve by the absolute paths registered in the Wine prefix)
 and runs it with `steam-run` + the Wine runner. The relevant environment
-variables (`LTTS7_ROOT`, `LOQTTS_INSTALL`, `WINEPREFIX`, `WINE64`) can be
-overridden to match your setup.
-
-Since the SDK is unfree, `--impure` and `NIXPKGS_ALLOW_UNFREE=1` are needed
-when building from the flake.
+variables (`LOQTTS_INSTALL`, `WINEPREFIX`, `WINE64`) can be overridden to
+match your setup.
 
 ## Usage
 
@@ -183,7 +224,8 @@ Create a bot in the Discord Developer Portal (token with the **Message
 Content** privileged intent enabled), deploy the CLI into the SDK `bin/`, then:
 
 ```
-nix develop . --impure   # go, libopus, steam-run, helpers available
+nix develop               # go, libopus, steam-run, helpers available
+loqtts-build               # make ROOT=$LTTS7_ROOT (set LTTS7_ROOT to your SDK)
 loqtts-deploy             # copy loqtts.exe + LoqTTS7AudioUser.dll to LOQTTS_INSTALL/bin
 loqtts-bot                # build and run the bot
 ```
@@ -194,7 +236,7 @@ The bot loads its configuration from `bot/.env` automatically (or from a
 to the Go process. Start from `cp bot/.env.example bot/.env` and put your
 token in `DISCORD_TOKEN`. Environment variables already set take precedence
 over `.env`. You can also run it from the flake package with
-`NIXPKGS_ALLOW_UNFREE=1 nix run .#bot --impure`.
+`NIXPKGS_ALLOW_UNFREE=1 nix run .#bot`.
 
 Environment variables:
 

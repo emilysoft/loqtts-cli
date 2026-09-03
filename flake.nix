@@ -3,36 +3,26 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-    # Proprietary Loquendo TTS 7 SDK. Point this at your install, e.g.:
-    #   nix build . --override-input loquendo-sdk path:/path/to/LTTS7
-    # Only include/ and lib/ are needed to build the CLI.
-    loquendo-sdk = {
-      url = "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7";
-      flake = false;
-    };
   };
 
   outputs = {
     self,
     nixpkgs,
-    loquendo-sdk,
   }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
     mingw = pkgs.pkgsCross.mingw32;
-  in {
-    packages.${system} = {
-      # Cross-compiled loqtts.exe for Windows (+ the in-memory audio DLL).
-      default = pkgs.stdenv.mkDerivation {
+
+    mkLoqTTS = ltts7Root:
+      pkgs.stdenv.mkDerivation {
         pname = "loqtts";
         version = "1.0.0";
         src = self;
 
-        sdk = loquendo-sdk;
+        sdk = ltts7Root;
 
         nativeBuildInputs = [
-          mingw.stdenv.cc # i686-w64-mingw32-gcc + dlltool
+          mingw.stdenv.cc
           pkgs.gnumake
         ];
 
@@ -55,8 +45,10 @@
           platforms = ["x86_64-linux"];
         };
       };
+  in {
+    packages.${system} = {
+      default = mkLoqTTS "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7";
 
-      # The Discord bot (Go, native Linux binary).
       bot = pkgs.buildGoModule {
         pname = "loqttsbot";
         version = "0.1.0";
@@ -88,7 +80,29 @@
       };
     };
 
-    # Development shell: cross toolchain + helpers to build, deploy and run.
+    nixosModules.default = {
+      config,
+      lib,
+      pkgs,
+      ...
+    }: let
+      cfg = config.programs.loqtts;
+    in {
+      options.programs.loqtts = {
+        enable = lib.mkEnableOption "Loquendo TTS 7 CLI";
+        ltts7 = lib.mkOption {
+          type = lib.types.path;
+          description = "Path to the Loquendo TTS 7 SDK installation (must contain include/ and lib/).";
+        };
+      };
+
+      config = lib.mkIf cfg.enable {
+        environment.systemPackages = [
+          (mkLoqTTS (toString cfg.ltts7))
+        ];
+      };
+    };
+
     devShells.${system} = {
       default = pkgs.mkShell {
         name = "loqtts-dev";
@@ -96,13 +110,13 @@
         packages = [
           mingw.stdenv.cc
           pkgs.gnumake
-          pkgs.steam-run # lets the .exe run under Wine on NixOS
+          pkgs.steam-run
           pkgs.go
           pkgs.pkg-config
           pkgs.libopus
           pkgs.opusfile
           pkgs.libogg
-          pkgs.ffmpeg # WAV -> MP3 for the !ttsmp3 command
+          pkgs.ffmpeg
           (pkgs.writeShellScriptBin "loqtts-build" ''
             exec make ROOT="''${LTTS7_ROOT:?set LTTS7_ROOT to your Loquendo SDK path}" "$@"
           '')
@@ -139,8 +153,7 @@
         ];
 
         env = {
-          LTTS7_ROOT = toString loquendo-sdk; # build: include/lib from the flake input
-          LOQTTS_INSTALL = "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7"; # run: DLLs resolve by registered absolute paths
+          LOQTTS_INSTALL = "/home/nit/Games/loquendo/drive_c/Program Files (x86)/Loquendo/LTTS7";
           WINEPREFIX = "/home/nit/Games/loquendo";
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.libopus pkgs.opusfile pkgs.libogg];
         };
@@ -151,7 +164,7 @@
           echo "  loqtts-deploy               copy exe + dll to LOQTTS_INSTALL/bin"
           echo "  loqtts-run [args]           run ./loqtts.exe under Wine (steam-run)"
           echo "  loqtts-bot [args]           build and run the Discord bot"
-          echo "  LTTS7_ROOT=$LTTS7_ROOT"
+          echo "  LTTS7_ROOT=\$LTTS7_ROOT"
         '';
       };
     };
