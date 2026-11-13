@@ -147,7 +147,8 @@
             cd "$install/bin" || exit 1
 
             if [ -z "$out" ]; then
-              exec run_loqtts "''${args[@]}"
+              run_loqtts "''${args[@]}"
+              exit $?
             fi
 
             if [ "$out" = "-" ]; then
